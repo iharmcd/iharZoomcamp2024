@@ -1,0 +1,8 @@
+ny_taxi_postgres_data/
+data_pgadmin/
+terrademo/keys/my-creds.json
+output.csv
+output.csv.gz
+taxi+_zone_lookup.csv
+yellow_tripdata_2021-01.csv.gz
+green_tripdata_2019-09.csv.gz

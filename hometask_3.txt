@@ -1,0 +1,151 @@
+# mage
+## load
+
+import io
+import pandas as pd
+import requests
+
+if 'data_loader' not in globals():
+    from mage_ai.data_preparation.decorators import data_loader
+if 'test' not in globals():
+    from mage_ai.data_preparation.decorators import test
+
+
+@data_loader
+def load_data_from_api(*args, **kwargs):
+    """
+    Template for loading data from API
+    """
+    links_list = [f"https://d37ci6vzurychx.cloudfront.net/trip-data/green_tripdata_2022-{i if i>=10 else '0'+str(i)}.parquet" for i in range(1,13)]
+
+
+    # # native date parsing 
+    parse_dates = ['lpep_pickup_datetime','lpep_dropoff_datetime']
+
+    result_df = pd.DataFrame()
+
+
+    for link in links_list:
+        print(link)
+        temp_df = pd.read_parquet(link, engine='pyarrow')
+
+        print(f"Loaded: {link}")
+
+        result_df = pd.concat([result_df, temp_df])
+
+    # print(shapes)
+    # print(result_df)
+    
+    return result_df
+        
+
+
+
+    # return pd.read_csv(
+    #     url, sep=',', compression='gzip', dtype=taxi_dtypes, parse_dates=parse_dates
+    #     )
+
+
+@test
+def test_output(output, *args) -> None:
+    """
+    Template code for testing the output of the block.
+    """
+    assert output is not None, 'The output is undefined'
+
+
+## export
+from mage_ai.settings.repo import get_repo_path
+from mage_ai.io.config import ConfigFileLoader
+from mage_ai.io.google_cloud_storage import GoogleCloudStorage
+from pandas import DataFrame
+from os import path
+
+if 'data_exporter' not in globals():
+    from mage_ai.data_preparation.decorators import data_exporter
+
+
+@data_exporter
+def export_data_to_google_cloud_storage(df: DataFrame, **kwargs) -> None:
+    """
+    Template for exporting data to a Google Cloud Storage bucket.
+    Specify your configuration settings in 'io_config.yaml'.
+
+    Docs: https://docs.mage.ai/design/data-loading#googlecloudstorage
+    """
+    config_path = path.join(get_repo_path(), 'io_config.yaml')
+    config_profile = 'default'
+
+    bucket_name = 'mage-zoomcamp-ihar-4'
+    object_key = 'nyc_green_taxi_data.parquet'
+
+    GoogleCloudStorage.with_config(ConfigFileLoader(config_path, config_profile)).export(
+        df,
+        bucket_name,
+        object_key,
+    )
+
+
+
+# BQ queries
+
+
+-- # Q1
+CREATE OR REPLACE EXTERNAL TABLE `ny_taxi.taxi_green_2022`
+OPTIONS (
+  format = 'parquet',
+  uris = ['gs://mage-zoomcamp-ihar-4/nyc_green_taxi_data.parquet']
+);
+
+select count(1) from `ny_taxi.taxi_green_2022`
+;
+
+
+CREATE OR REPLACE TABLE `ny_taxi.taxi_green_2022_internal`
+as select * from `ny_taxi.taxi_green_2022`
+;
+
+
+-- Q2
+
+select count(distinct PULocationID) from `ny_taxi.taxi_green_2022`; -- 0B
+
+select count(distinct PULocationID) from `ny_taxi.taxi_green_2022_internal`; -- 6.41MB
+
+
+-- Q3
+select count(1) from `ny_taxi.taxi_green_2022` where fare_amount = 0;
+
+
+-- Q5
+select count(distinct PULocationID) from `ny_taxi.taxi_green_2022_internal` 
+where date(timestamp_millis(safe_cast(lpep_pickup_datetime/1000000 as int))) between '2022-06-01' and '2022-06-30'; -- 12.82 MB
+
+
+create or replace table `ny_taxi.taxi_green_2022_internal` 
+as select *, date(timestamp_millis(safe_cast(lpep_pickup_datetime/1000000 as int))) as lpep_pickup_date
+from `ny_taxi.taxi_green_2022_internal` 
+;
+
+create table `ny_taxi.taxi_green_2022_partitioned` 
+PARTITION BY lpep_pickup_date
+CLUSTER BY PULocationID
+AS
+select * from `ny_taxi.taxi_green_2022_internal` 
+;
+
+select count(distinct PULocationID) from `ny_taxi.taxi_green_2022_partitioned` 
+where lpep_pickup_date between '2022-06-01' and '2022-06-30'; -- 1.12 MB
+
+-- select timestamp_millis(safe_cast(1645352570000000000/1000000 as int));
+
+-- 1640996061000
+-- 1645352570000000000
+
+-- Q8
+select count(*) from `ny_taxi.taxi_green_2022_internal` ;
+
+
+select count(1) from `ny_taxi.taxi_green_2022_internal` ;
+
+
